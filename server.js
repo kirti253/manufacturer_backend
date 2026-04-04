@@ -30,6 +30,8 @@ function parseAllowedOrigins() {
 }
 
 const allowedOrigins = new Set(parseAllowedOrigins());
+/** Array form avoids node-cors bugs when denying dynamic origins (preflight must end in-framework). */
+const allowedOriginsArray = Array.from(allowedOrigins);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -40,14 +42,31 @@ if (!ADMIN_PASSWORD || !JWT_SECRET) {
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.has(normalizeOrigin(origin))) return callback(null, origin);
-      callback(new Error("Not allowed by CORS"));
-    },
+    origin: allowedOriginsArray,
     credentials: true,
   })
 );
+
+/** Lazy schema so OPTIONS/CORS never depends on DB (fixes Vercel cold start 500 on preflight). */
+let schemaReadyPromise;
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") return next();
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = ensureSchema().catch((err) => {
+      schemaReadyPromise = null;
+      throw err;
+    });
+  }
+  schemaReadyPromise
+    .then(() => next())
+    .catch((err) => {
+      console.error(err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Database unavailable" });
+      }
+    });
+});
+
 app.use(express.json({ limit: "64kb" }));
 
 function isNonEmptyString(v) {
@@ -151,7 +170,6 @@ app.get("/api/health", (_req, res) => {
 });
 
 async function main() {
-  await ensureSchema();
   const server = app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
   });
@@ -166,7 +184,13 @@ async function main() {
   });
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.env.VERCEL) {
+  // Serverless: Vercel invokes the exported app; do not bind a port.
+} else {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
+
+export default app;
