@@ -165,6 +165,29 @@ app.get("/api/admin/contacts", adminAuth, async (req, res) => {
   }
 });
 
+app.delete("/api/admin/contacts/:id", adminAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid submission id" });
+  }
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM contact_submissions WHERE id = $1",
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Submission not found" });
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Could not delete submission" });
+  }
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
