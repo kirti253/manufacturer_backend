@@ -170,35 +170,33 @@ app.post("/api/contact", async (req, res) => {
 
     const submissionId = rows[0].id;
     const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-    const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@elegance-atelier.com";
+    let notificationSent = false;
 
-    // Send admin notification email asynchronously (don't wait for it)
-    (async () => {
-      try {
-        if (ADMIN_EMAIL) {
-          await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: ADMIN_EMAIL,
-            subject: `New Contact Form Submission from ${nameTrim}`,
-            html: getAdminNotificationEmail(
-              nameTrim,
-              emailTrim,
-              subjectTrim,
-              messageTrim,
-              phone,
-            ),
-          });
-        }
-      } catch (emailErr) {
-        console.error("Error sending admin email:", emailErr);
-        // Don't fail the request if email fails - submission was saved
+    try {
+      if (ADMIN_EMAIL) {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: ADMIN_EMAIL,
+          subject: `New Contact Form Submission from ${nameTrim}`,
+          html: getAdminNotificationEmail(
+            nameTrim,
+            emailTrim,
+            subjectTrim,
+            messageTrim,
+            phone,
+          ),
+        });
+        notificationSent = true;
       }
-    })();
+    } catch (emailErr) {
+      console.error("Error sending admin email:", emailErr);
+    }
 
     return res.status(201).json({
       ok: true,
       id: submissionId,
       created_at: rows[0].created_at,
+      notificationSent,
     });
   } catch (e) {
     console.error(e);
